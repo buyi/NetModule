@@ -147,9 +147,7 @@ public class URLConnectionImpl {
 
     }
 
-    interface ResponseProcessor<T> {
-        public T processResponse(NetResponse response);
-    }
+
 
 
     /**HTTP响应处理器，此处将Inputstream处理为文本**/
@@ -211,6 +209,11 @@ public class URLConnectionImpl {
         }
     };
 
+    /**
+     * 获取相应体的header
+     * @param connection
+     * @return
+     */
     private HashMap<String, String> headerToHashMap(HttpURLConnection connection) {
         // printResponseHeaders(connection);
         HashMap<String, String> map = new HashMap<String, String>();
@@ -234,6 +237,11 @@ public class URLConnectionImpl {
         return map;
     }
 
+    /**
+     * 设置头部
+     * @param con
+     * @param value
+     */
     private void setupConHeader (URLConnection con, Map<String, String> value) {
         if (value == null) {
             return;
@@ -266,13 +274,19 @@ public class URLConnectionImpl {
                         values.append("," + value);
                     }
                 }
-            System.out.println(key + ":" + values.toString());
+            System.out.println("request header##" + key + ":" + values.toString());
             }
 
 
     }
 
 
+    /**
+     * 转换header map为字串
+     * 添加上& 和 做encode处理
+     * @param parameters
+     * @return
+     */
     private String convertHeader (Map<String, String> parameters) {
         // 首先验证参数合法性 如果没有get参数则返回空串
         if (parameters == null) {
@@ -293,11 +307,21 @@ public class URLConnectionImpl {
 
         return sb.toString();
     }
+
+    /**
+     * 打印请求体参数
+     * @param value
+     */
     private void dumpRequestParams ( Map<String, String> value) {
         String headers = convertHeader (value);
-        System.out.println("params:" + headers);
+        System.out.println("request params##" + headers);
     }
 
+
+    /**
+     * 检查响应码
+     * @param connection
+     */
     private void checkResponse(HttpURLConnection connection)
            /* throws NetworkException*/ {
         try {
@@ -312,6 +336,10 @@ public class URLConnectionImpl {
     }
 
 
+    /**
+     * 打印出响应的header
+     * @param connection
+     */
 
     private  void dumpResponseHeader (HttpURLConnection connection) {
         Map<String, List<String>> map = connection.getHeaderFields();
@@ -328,143 +356,11 @@ public class URLConnectionImpl {
                     values.append("," + value);
                 }
             }
-            System.out.println(key + ":" + values.toString());
+            System.out.println("response header##"+ key + ":" + values.toString());
         }
-
-
     }
 
     private void dumpResponseContent () {
 
     }
-}
-
-
-/**
- * A resizable byte array.
- *
- * @author <a href="mailto:oleg@ural.ru">Oleg Kalnichevski</a>
- *
- * @version $Revision: 496070 $
- *
- * @since 4.0
- *
-// * @deprecated Please use {@link java.net.URL#openConnection} instead.
- *     Please visit <a href="http://android-developers.blogspot.com/2011/09/androids-http-clients.html">this webpage</a>
- *     for further details.
- */
-//@Deprecated
-class ByteArrayBuffer  {
-
-    private byte[] buffer;
-    private int len;
-    public ByteArrayBuffer(int capacity) {
-        super();
-        if (capacity < 0) {
-            throw new IllegalArgumentException("Buffer capacity may not be negative");
-        }
-        this.buffer = new byte[capacity];
-    }
-    private void expand(int newlen) {
-        byte newbuffer[] = new byte[Math.max(this.buffer.length << 1, newlen)];
-        System.arraycopy(this.buffer, 0, newbuffer, 0, this.len);
-        this.buffer = newbuffer;
-    }
-
-    public void append(final byte[] b, int off, int len) {
-        if (b == null) {
-            return;
-        }
-        if ((off < 0) || (off > b.length) || (len < 0) ||
-                ((off + len) < 0) || ((off + len) > b.length)) {
-            throw new IndexOutOfBoundsException();
-        }
-        if (len == 0) {
-            return;
-        }
-        int newlen = this.len + len;
-        if (newlen > this.buffer.length) {
-            expand(newlen);
-        }
-        System.arraycopy(b, off, this.buffer, this.len, len);
-        this.len = newlen;
-    }
-    public void append(int b) {
-        int newlen = this.len + 1;
-        if (newlen > this.buffer.length) {
-            expand(newlen);
-        }
-        this.buffer[this.len] = (byte)b;
-        this.len = newlen;
-    }
-    public void append(final char[] b, int off, int len) {
-        if (b == null) {
-            return;
-        }
-        if ((off < 0) || (off > b.length) || (len < 0) ||
-                ((off + len) < 0) || ((off + len) > b.length)) {
-            throw new IndexOutOfBoundsException();
-        }
-        if (len == 0) {
-            return;
-        }
-        int oldlen = this.len;
-        int newlen = oldlen + len;
-        if (newlen > this.buffer.length) {
-            expand(newlen);
-        }
-        for (int i1 = off, i2 = oldlen; i2 < newlen; i1++, i2++) {
-            this.buffer[i2] = (byte) b[i1];
-        }
-        this.len = newlen;
-    }
-//    public void append(final CharArrayBuffer b, int off, int len) {
-//        if (b == null) {
-//            return;
-//        }
-//        append(b.buffer(), off, len);
-//    }
-
-    public void clear() {
-        this.len = 0;
-    }
-
-    public byte[] toByteArray() {
-        byte[] b = new byte[this.len];
-        if (this.len > 0) {
-            System.arraycopy(this.buffer, 0, b, 0, this.len);
-        }
-        return b;
-    }
-
-    public int byteAt(int i) {
-        return this.buffer[i];
-    }
-
-    public int capacity() {
-        return this.buffer.length;
-    }
-
-    public int length() {
-        return this.len;
-    }
-    public byte[] buffer() {
-        return this.buffer;
-    }
-
-    public void setLength(int len) {
-        if (len < 0 || len > this.buffer.length) {
-            throw new IndexOutOfBoundsException();
-        }
-        this.len = len;
-    }
-
-    public boolean isEmpty() {
-        return this.len == 0;
-    }
-
-    public boolean isFull() {
-        return this.len == this.buffer.length;
-    }
-
 }
