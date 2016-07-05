@@ -7,10 +7,23 @@ import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 /**
  * Created by buyi on 16/7/4.
@@ -34,8 +47,8 @@ public class URLConnectionImpl {
 
             // get参数永远都拼在url上面
             URL url = new URL(NetUtils.setupCompleteUrl(request));
+            HttpURLConnection conn = wrapConnection(url);
 
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             // 装载header
             setupConHeader(conn, request.headers);
             // 打印header
@@ -88,6 +101,85 @@ public class URLConnectionImpl {
         }
     }
 
+    public NetResponse httpsGet (NetRequest request) {
+        // 创建SSLContext对象，并使用我们指定的信任管理器初始化
+        try {
+//            TrustManager[] tm = { new MyX509TrustManager() };
+//            SSLContext sslContext = SSLContext.getInstance("SSL", "SunJSSE");
+//            sslContext.init(null, tm, new java.security.SecureRandom());
+//            // 从上述SSLContext对象中得到SSLSocketFactory对象
+//            SSLSocketFactory ssf = sslContext.getSocketFactory();
+            // 创建URL对象
+            URL myURL = new URL(request.url);
+            // 创建HttpsURLConnection对象，并设置其SSLSocketFactory对象
+            HttpsURLConnection httpsConn = (HttpsURLConnection) myURL.openConnection();
+//            httpsConn.setSSLSocketFactory(ssf);
+//            httpsConn.setHostnameVerifier(DO_NOT_VERIFY);
+            // 取得该连接的输入流，以读取响应内容
+            InputStreamReader insr = new InputStreamReader(httpsConn.getInputStream());
+            // 读取服务器的响应内容并显示
+            int respInt = insr.read();
+            while (respInt != -1) {
+                System.out.print((char) respInt);
+                respInt = insr.read();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    //javax.net.ssl.SSLHandshakeException: java.security.cert.CertificateException: No subject alternative DNS name matching ebanks.gdb.com.cn found.
+    private final static HostnameVerifier DO_NOT_VERIFY = new HostnameVerifier() {
+        public boolean verify(String hostname, SSLSession session) {
+            return true;
+        }
+    };
+
+    private HttpURLConnection wrapConnection (URL url) {
+        HttpURLConnection conn = null;
+        try {
+            conn = null;
+            if (url.getProtocol().equals("https")) {
+                conn = (HttpsURLConnection) url.openConnection();
+                TrustManager[] tm = { new X509TrustManager() {
+                    @Override
+                    public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                    }
+
+                    @Override
+                    public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+                    }
+
+                    @Override
+                    public X509Certificate[] getAcceptedIssuers() {
+                        return new X509Certificate[0];
+                    }
+                } };
+                try {
+                    SSLContext sslContext = SSLContext.getInstance("SSL", "SunJSSE");
+                    sslContext.init(null, tm, new java.security.SecureRandom());
+                    // 从上述SSLContext对象中得到SSLSocketFactory对象
+                    SSLSocketFactory ssf = sslContext.getSocketFactory();
+                    //PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target
+                    ((HttpsURLConnection)conn).setSSLSocketFactory(ssf);
+                    ((HttpsURLConnection)conn).setHostnameVerifier(DO_NOT_VERIFY);
+                } catch (NoSuchAlgorithmException e) {
+                    e.printStackTrace();
+                } catch (NoSuchProviderException e) {
+                    e.printStackTrace();
+                } catch (KeyManagementException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                conn = (HttpURLConnection) url.openConnection();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return conn;
+    }
+
 
 
 
@@ -104,7 +196,10 @@ public class URLConnectionImpl {
 
             // 组装url 打开连接
             URL url = new URL(NetUtils.setupCompleteUrl(request));
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+
+            HttpURLConnection conn = wrapConnection(url);
+
 
             // 装载header
             setupConHeader(conn, request.headers);
