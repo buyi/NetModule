@@ -1,5 +1,6 @@
 package com.buyi.networkmodule;
 
+import android.os.Build;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
@@ -9,12 +10,11 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import com.buyi.network.core.NetRequest;
+import com.buyi.network.core.URLConnectionImpl;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -38,31 +38,18 @@ public class MainActivity extends AppCompatActivity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                long current = -1;
-                try {
-                    current = System.currentTimeMillis();
-//                    String link = "http://www.baidu.com";
-                    String link = "http://www.google.com";
-                    URL url = new URL(link);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.connect();
-
-                    conn.setConnectTimeout(5000);
-                    conn.setReadTimeout(10000);
-                    InputStream is = conn.getInputStream();
-                    BufferedReader reader =new BufferedReader(new InputStreamReader(is, "UTF-8"));
-                    String webPage = "",data="";
-
-                    while ((data = reader.readLine()) != null){
-                        webPage += data + "\n";
-                    }
-
-                    System.out.println("webPage:" + webPage);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    long duration = System.currentTimeMillis() - current;
-                    System.out.println("duration:" + duration);
-                }
+                NetRequest request = new NetRequest();
+                request.url = "http://api.jikexueyuan.com/v3/activity/banner?";
+                Map<String, String> params = new HashMap<>();
+                params.put("type", "2");
+                params.put("debug", "ADubaC");
+                request.getParams = params;
+                Map<String, String> headers = new HashMap<>();
+                headers.put("User-Agent", String.format("%s/%s (Linux; Android %s; %s Build/%s)", "buyi_network", "1.0", Build.VERSION.RELEASE, Build.MANUFACTURER, Build.ID));
+//                headers.put("Cache-control", "");
+                request.headers = headers;
+                URLConnectionImpl impl = new URLConnectionImpl();
+                impl.httpGet(request);
             }
         }).start();
     }

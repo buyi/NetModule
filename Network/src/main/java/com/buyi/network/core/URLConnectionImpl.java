@@ -1,253 +1,169 @@
 package com.buyi.network.core;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
-import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.URLConnection;
-import java.net.URLEncoder;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.zip.GZIPInputStream;
 
 /**
  * Created by buyi on 16/7/4.
  */
 public class URLConnectionImpl {
+    // 连接超时时间常量
+    private final int CONNECT_TIMEOUT = 5000;
+    private final int READ_TIMEOUT = 10000;
 
     /**
-     * encode url params
-     * @param in
+     * http post请求
+     * @param request
      * @return
      */
-    private String urlEncode(String in) {
-        if (in == null || in.length() == 0) {
-            return "";
-        }
-
-        try {
-            return URLEncoder.encode(in, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            return "";
-        }
-    }
-
-    /**
-     * 将哈希表中的数据转换成url encode完好的请求参数字符串 然后与原有url拼接成完整URL
-     * @param url
-     * @param parameters
-     * @return
-     */
-    public String setupCompleteUrl(String url, Map<String, String> parameters) {
-
-        final String params = convertHeader (parameters);
-
-        //  如果参数字串为空， 则直接返回原url
-        if (params == null || params.length() == 0) {
-            return url;
-        }
-
-        // 如果原url为空 则返回空串
-        if (url == null || url.length() == 0){
-            return "";
-        }
-
-        // 处理url里边含有#的情况
-        final String HASH_KEY = "#";
-        String fragment = null;
-        if (url.contains(HASH_KEY)) {
-            int hashKeyPos = url.indexOf(HASH_KEY);
-            fragment = url.substring(hashKeyPos);
-            url = url.substring(0, hashKeyPos);
-        }
-
-        // 判断url本身如果不带有?符号 添加?
-        if (url.indexOf('?') != -1) {
-            url += "&" + params;
-        } else {
-            url += "?" + params;
-        }
-
-        // 如果之前截取的fragment不为空
-        if (!(fragment == null || fragment.length() == 0)) {
-            url += fragment;
-        }
-        return url;
-    }
-
-    public NetResponse httpGet (NetRequest request) {
-
-
+    public NetResponse httpPost (NetRequest request) {
         long current = -1;
+
         try {
+            // 计算网络访问开始时间
             current = System.currentTimeMillis();
-//                    String link = "http://www.baidu.com";
 
-            String link = setupCompleteUrl(request.url, request.params);
+            // get参数永远都拼在url上面
+            URL url = new URL(NetUtils.setupCompleteUrl(request));
 
-
-            // 如果原url为空 则返回空串
-            if (link == null || link.length() == 0){
-               // TODO
-            }
-            System.out.println("url:" + link);
-            URL url = new URL(link);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-
-
-
+            // 装载header
             setupConHeader(conn, request.headers);
+            // 打印header
             dumpRequestHeader(conn);
-            dumpRequestParams(request.params);
+            // 打印请求参数
+            dumpRequestParams(request.getParams);
+            // 打印请求参数
+            dumpRequestParams(request.postParams);
 
-
-
-
-            conn.setRequestMethod("GET");
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
             conn.setDoInput(true);
-            conn.setDoOutput(false);
-            conn.setConnectTimeout(5000);
-            conn.setReadTimeout(10000);
+            conn.setConnectTimeout(CONNECT_TIMEOUT);
+            conn.setReadTimeout(READ_TIMEOUT);
+
+            // 写post params
+            OutputStreamWriter writer = new OutputStreamWriter(conn.getOutputStream());
+            String urlParameters = NetUtils.convertParams(request.postParams);
+            writer.write(urlParameters);
+            writer.flush();
 
 
-            conn.connect();
-
+            // 检查返回code
             checkResponse(conn);
-            dumpResponseHeader (conn);
 
-
-            InputStream is = conn.getInputStream();
 
 
             NetResponse nr = new NetResponse();
             nr.connection = conn;
-            nr.mCode = conn.getResponseCode();
-            nr.mContent = conn.getInputStream();
-            nr.mHeaders = headerToHashMap(conn);
-//            nr.mVersion = conn.getre
-//            BufferedReader reader =new BufferedReader(new InputStreamReader(is, "UTF-8"));
-//            String webPage = "",data="";
-//
-//            while ((data = reader.readLine()) != null){
-//                webPage += data + "\n";
-//            }
-            mStringProcessor.processResponse(nr);
-//            System.out.println("webPage:" + webPage);
+            nr.code = conn.getResponseCode();
+            nr.content = conn.getInputStream();
+            nr.message = conn.getResponseMessage();
+            // 组装并打印响应体header
+            nr.header = setupAndDumpResponseHeader(conn);
+
+            // 打印返回内容
+            dumpResponseContent(nr);
+
+            long duration = System.currentTimeMillis() - current;
+            System.out.println("normal duration##" + duration);
+            writer.close();
+
+
+            return nr;
         } catch (IOException e) {
             e.printStackTrace();
             long duration = System.currentTimeMillis() - current;
-            System.out.println("duration:" + duration);
+            System.out.println("exception duration##" + duration);
+            return null;
         }
-    return null;
-
-
     }
 
 
 
-
-    /**HTTP响应处理器，此处将Inputstream处理为文本**/
-    private ResponseProcessor<String> mStringProcessor = new ResponseProcessor<String>() {
-        @Override
-        public String processResponse(NetResponse response){
-            if (response == null) {
-                return null;
-            }
-//            StringBuilder buffer = new StringBuilder(64);
-            ByteArrayBuffer buffer = new ByteArrayBuffer(32 * 1024);
-            InputStream in = null;
-            try {
-                in = response.mContent;
-                if (response.mHeaders == null) {
-//                    LogAssist.e(Developer.WANGBO, Module.NET_CORE,
-//                            "header is null");
-                }
-
-                String encoding = response.mHeaders.get("Content-Encoding");
-                if (encoding != null && encoding.contains("gzip")) {
-//                    LogAssist.d(Developer.WANGBO, Module.NET_CORE, "gzip");
-                    in = new GZIPInputStream(in);
-                } else {
-//                    LogAssist.d(Developer.WANGBO, Module.NET_CORE, "no gzip");
-                }
-
-                int temp;
-                byte[] bytes = new byte[8096];
-                while ((temp = in.read(bytes)) != -1) {
-//                    buffer.append(bytes);
-                    buffer.append(bytes, 0, temp);
-                }
-
-            } catch (SocketTimeoutException e) {
-                e.printStackTrace();
-//                throw new NetworkException(NetworkException.SOCKET_TIMEOUT_EXCEPTION,
-//                        "tips_network_error2",e);
-            } catch (IOException e) {
-//                e.printStackTrace();
-//                throw new NetworkException(NetworkException.IO_EXCEPTION, e);
-            } finally {
-                if (in != null) {
-                    try {
-                        in.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-                if (response != null) {
-                    response.closeConnection();
-                }
-            }
-            byte[] result = buffer.toByteArray();
-            String data = new String(result);
-            System.out.println(" buffer.toString():" + data);
-//            LogAssist.d(Developer.WANGBO, Module.NET_CORE, data);
-            return buffer.toString();
-        }
-    };
 
     /**
-     * 获取相应体的header
-     * @param connection
+     * 执行http get请求方法
+     * @param request
      * @return
      */
-    private HashMap<String, String> headerToHashMap(HttpURLConnection connection) {
-        // printResponseHeaders(connection);
-        HashMap<String, String> map = new HashMap<String, String>();
-        Map<String, List<String>> headers = connection.getHeaderFields();
-        StringBuilder sb = new StringBuilder();
-        for (String key : headers.keySet()) {
-            List<String> list = headers.get(key);
+    public NetResponse httpGet (NetRequest request) {
+        long current = -1;
+        try {
+            // 计算网络访问开始时间
+            current = System.currentTimeMillis();
 
-            boolean first = true;
-            for (String head : list) {
-                if (first) {
-                    first = false;
-                } else {
-                    sb.append(";");
-                }
-                sb.append(head);
-            }
-            map.put(key, sb.toString());
-            sb.delete(0, sb.length());// 清空
+            // 组装url 打开连接
+            URL url = new URL(NetUtils.setupCompleteUrl(request));
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+            // 装载header
+            setupConHeader(conn, request.headers);
+            // 打印header
+            dumpRequestHeader(conn);
+            // 打印请求参数
+            dumpRequestParams(request.getParams);
+
+            // 只取不写
+            conn.setRequestMethod("GET");
+            conn.setDoInput(true);
+            conn.setDoOutput(false);
+            // 设置超时时间
+            conn.setConnectTimeout(CONNECT_TIMEOUT);
+            conn.setReadTimeout(READ_TIMEOUT);
+
+
+            conn.connect();
+
+            // 检查返回code
+            checkResponse(conn);
+
+
+
+            NetResponse nr = new NetResponse();
+            nr.connection = conn;
+            nr.code = conn.getResponseCode();
+            nr.content = conn.getInputStream();
+            nr.message = conn.getResponseMessage();
+            // 组装并打印响应体header
+            nr.header = setupAndDumpResponseHeader(conn);
+
+            // 打印返回内容
+            dumpResponseContent(nr);
+
+            long duration = System.currentTimeMillis() - current;
+            System.out.println("normal duration##" + duration);
+            return nr;
+        } catch (IOException e) {
+            e.printStackTrace();
+            long duration = System.currentTimeMillis() - current;
+            System.out.println("exception duration##" + duration);
+            return null;
         }
-        return map;
     }
+
+
 
     /**
      * 设置头部
      * @param con
-     * @param value
+     * @param headerMap
      */
-    private void setupConHeader (URLConnection con, Map<String, String> value) {
-        if (value == null) {
+    private void setupConHeader (URLConnection con, Map<String, String> headerMap) {
+        if (headerMap == null) {
             return;
         }
 
-        Set<Map.Entry<String, String>> headers = value.entrySet();
+        Set<Map.Entry<String, String>> headers = headerMap.entrySet();
         for (Map.Entry<String, String> header : headers) {
             con.setRequestProperty(header.getKey(), header.getValue());
         }
@@ -258,63 +174,34 @@ public class URLConnectionImpl {
      * @param con
      */
     private void dumpRequestHeader(URLConnection con) {
-
-
-            Map<String, List<String>> map = con.getRequestProperties();
-            Set<String> set = map.keySet();
-            for (String key : set) {
-                List<String> list = map.get(key);
-                StringBuilder values = new StringBuilder();
-                boolean first = true;
-                for (String value : list) {
-                    if (first) {
-                        first = false;
-                        values.append(value);
-                    } else {
-                        values.append("," + value);
-                    }
+        Map<String, List<String>> map = con.getRequestProperties();
+        Set<String> set = map.keySet();
+        for (String key : set) {
+            List<String> list = map.get(key);
+            StringBuilder values = new StringBuilder();
+            boolean first = true;
+            for (String value : list) {
+                if (first) {
+                    first = false;
+                    values.append(value);
+                } else {
+                    values.append("," + value);
                 }
+            }
             System.out.println("request header##" + key + ":" + values.toString());
-            }
-
-
+        }
     }
 
 
-    /**
-     * 转换header map为字串
-     * 添加上& 和 做encode处理
-     * @param parameters
-     * @return
-     */
-    private String convertHeader (Map<String, String> parameters) {
-        // 首先验证参数合法性 如果没有get参数则返回空串
-        if (parameters == null) {
-            return "";
-        }
 
-        // 拼接参数
-        StringBuilder sb = new StringBuilder(64);
-        boolean first = true;
-        for (String key : parameters.keySet()) {
-            if (first) {
-                first = false;
-            } else {
-                sb.append("&");
-            }
-            sb.append(urlEncode(key) + "=" + urlEncode(String.valueOf(parameters.get(key))));
-        }
-
-        return sb.toString();
-    }
 
     /**
      * 打印请求体参数
      * @param value
      */
     private void dumpRequestParams ( Map<String, String> value) {
-        String headers = convertHeader (value);
-        System.out.println("request params##" + headers);
+        String headers = NetUtils.convertParams(value);
+        System.out.println("request Params##" + headers);
     }
 
 
@@ -335,32 +222,111 @@ public class URLConnectionImpl {
         }
     }
 
-
     /**
-     * 打印出响应的header
+     * 获取连接的响应header 并打印
      * @param connection
+     * @return
      */
+    private HashMap<String, String> setupAndDumpResponseHeader(HttpURLConnection connection) {
+        // printResponseHeaders(connection);
+        HashMap<String, String> map = new HashMap<String, String>();
+        Map<String, List<String>> headers = connection.getHeaderFields();
+        StringBuilder sb = new StringBuilder();
+        for (String key : headers.keySet()) {
+            List<String> list = headers.get(key);
 
-    private  void dumpResponseHeader (HttpURLConnection connection) {
-        Map<String, List<String>> map = connection.getHeaderFields();
-        Set<String> set = map.keySet();
-        for (String key : set) {
-            List<String> list = map.get(key);
-            StringBuilder values = new StringBuilder();
             boolean first = true;
-            for (String value : list) {
+            for (String head : list) {
                 if (first) {
                     first = false;
-                    values.append(value);
                 } else {
-                    values.append("," + value);
+                    sb.append(";");
                 }
+                sb.append(head);
             }
-            System.out.println("response header##"+ key + ":" + values.toString());
+            map.put(key, sb.toString());
+            System.out.println("response header##" + key + ":" + sb.toString());
+            sb.delete(0, sb.length());// 清空
         }
+        return map;
     }
 
-    private void dumpResponseContent () {
 
+
+    /**
+     * 打印响应内容
+     */
+    private void dumpResponseContent (NetResponse nr) {
+        System.out.println("response content##" + nr);
+        try {
+            BufferedReader reader =new BufferedReader(new InputStreamReader(nr.content, "UTF-8"));
+            String webPage = "",data="";
+
+            while ((data = reader.readLine()) != null){
+                webPage += data + "\n";
+            }
+            System.out.println("webPage:" + webPage);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+//        /**HTTP响应处理器，此处将Inputstream处理为文本**/
+//        ResponseProcessor<String> mStringProcessor = new ResponseProcessor<String>() {
+//            @Override
+//            public String processResponse(NetResponse response){
+//                if (response == null) {
+//                    return null;
+//                }
+////            StringBuilder buffer = new StringBuilder(64);
+//                ByteArrayBuffer buffer = new ByteArrayBuffer(32 * 1024);
+//                InputStream in = null;
+//                try {
+//                    in = response.content;
+//                    if (response.header == null) {
+////                    LogAssist.e(Developer.WANGBO, Module.NET_CORE,
+////                            "header is null");
+//                    }
+//
+//                    String encoding = response.header.get("Content-Encoding");
+//                    if (encoding != null && encoding.contains("gzip")) {
+////                    LogAssist.d(Developer.WANGBO, Module.NET_CORE, "gzip");
+//                        in = new GZIPInputStream(in);
+//                    } else {
+////                    LogAssist.d(Developer.WANGBO, Module.NET_CORE, "no gzip");
+//                    }
+//
+//                    int temp;
+//                    byte[] bytes = new byte[8096];
+//                    while ((temp = in.read(bytes)) != -1) {
+////                    buffer.append(bytes);
+//                        buffer.append(bytes, 0, temp);
+//                    }
+//
+//                } catch (SocketTimeoutException e) {
+//                    e.printStackTrace();
+////                throw new NetworkException(NetworkException.SOCKET_TIMEOUT_EXCEPTION,
+////                        "tips_network_error2",e);
+//                } catch (IOException e) {
+////                e.printStackTrace();
+////                throw new NetworkException(NetworkException.IO_EXCEPTION, e);
+//                } finally {
+//                    if (in != null) {
+//                        try {
+//                            in.close();
+//                        } catch (IOException e) {
+//                            e.printStackTrace();
+//                        }
+//                    }
+//                    if (response != null) {
+//                        response.closeConnection();
+//                    }
+//                }
+//                byte[] result = buffer.toByteArray();
+//                String data = new String(result);
+//                System.out.println(" buffer.toString():" + data);
+////            LogAssist.d(Developer.WANGBO, Module.NET_CORE, data);
+//                return buffer.toString();
+//            }
+//        };
+//        mStringProcessor.processResponse(nr);
     }
 }
